@@ -6,8 +6,9 @@ databases/*
 docker-compose.yml
 .databases.env.hash
 
-# Sensitive configuration (uncomment if you want to ignore)
-# databases.env
+# Sensitive configuration
+databases.env
+.env
 
 # OS files
 .DS_Store
