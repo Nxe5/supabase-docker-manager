@@ -6,14 +6,8 @@ databases/*
 docker-compose.yml
 .databases.env.hash
 
-# Sensitive configuration
-databases.env
-
-# Database-specific directories (moved to databases/)
-# Keep this for any legacy directories
-*-db/
-test-*/
-fish-*/
+# Sensitive configuration (uncomment if you want to ignore)
+# databases.env
 
 # OS files
 .DS_Store

@@ -258,7 +258,7 @@ ${entry}
     print_success "Entry added to databases.env"
     
     # Create database directory (same as cmd_add)
-    local db_dir="${SCRIPT_DIR}/${db_name}"
+    local db_dir="${SCRIPT_DIR}/databases/${db_name}"
     if [ -d "$db_dir" ]; then
         print_info "Directory '$db_dir' already exists, skipping creation"
     else
@@ -417,7 +417,7 @@ cmd_remove() {
     print_success "Entry removed from databases.env"
     
     # Check if directory exists and ask about removal
-    local db_dir="${SCRIPT_DIR}/${db_name}"
+    local db_dir="${SCRIPT_DIR}/databases/${db_name}"
     if [ -d "$db_dir" ]; then
         read -p "Remove database directory '$db_dir' and all its files? (y/N) " -n 1 -r
         echo
@@ -485,7 +485,7 @@ cmd_remove_all() {
         
         # Remove directory if requested
         if [ "$remove_dirs" = true ]; then
-            local db_dir="${SCRIPT_DIR}/${db_name}"
+            local db_dir="${SCRIPT_DIR}/databases/${db_name}"
             if [ -d "$db_dir" ]; then
                 print_info "  Removing directory: $db_dir"
                 rm -rf "$db_dir"
