@@ -1,0 +1,30 @@
+# Database directories - ignore contents but keep folder structure
+databases/*
+!databases/.gitkeep
+
+# Auto-generated files
+docker-compose.yml
+.databases.env.hash
+
+# Sensitive configuration
+databases.env
+
+# Database-specific directories (moved to databases/)
+# Keep this for any legacy directories
+*-db/
+test-*/
+fish-*/
+
+# OS files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Editor files
+.vscode/
+.idea/
+
+# Logs
+*.log
+
