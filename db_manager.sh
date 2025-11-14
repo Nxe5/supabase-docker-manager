@@ -541,6 +541,9 @@ cmd_update_resources() {
     print_header "Updating resources for: $db_name"
     
     local temp_file=$(mktemp)
+    # Preserve header comments (everything before first database entry)
+    sed -n '1,/^[^#|]*|/p' "$CENTRAL_ENV" | sed '$d' >> "$temp_file"
+    # Process database entries
     while IFS='|' read -r name postgres_port kong_http_port kong_https_port pooler_port cpu mem rest; do
         if [ "$name" == "$db_name" ]; then
             echo "${name}|${postgres_port}|${kong_http_port}|${kong_https_port}|${pooler_port}|${cpu_limit}|${memory_limit}|${rest}" >> "$temp_file"
@@ -548,6 +551,7 @@ cmd_update_resources() {
             echo "${name}|${postgres_port}|${kong_http_port}|${kong_https_port}|${pooler_port}|${cpu}|${mem}|${rest}" >> "$temp_file"
         fi
     done < <(grep -E "^[^#].*\|" "$CENTRAL_ENV" | grep -v "^DASHBOARD_USERNAME")
+    # Preserve global config section (everything from DASHBOARD_USERNAME onwards)
     sed -n '/^DASHBOARD_USERNAME/,$p' "$CENTRAL_ENV" >> "$temp_file"
     mv "$temp_file" "$CENTRAL_ENV"
     
