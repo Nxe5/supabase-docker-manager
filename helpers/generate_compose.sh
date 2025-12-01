@@ -107,15 +107,18 @@ while IFS='|' read -r db_name postgres_port kong_http_port kong_https_port poole
       - log_min_messages=fatal
 EOF
 
-    # Add vector dependency only in full mode
+    # Add vector dependency only in full mode (use service_started instead of healthy since vector healthcheck can be flaky)
     if [ "$FULL_SERVICES" = "full" ]; then
         cat >> "$COMPOSE_FILE" << EOF
     depends_on:
       ${db_name}-vector:
-        condition: service_healthy
+        condition: service_started
 EOF
     fi
 
+    # Kong entrypoint command with proper escaping
+    kong_entrypoint_cmd="bash -c 'eval \"echo \\\"\$(cat ~/temp.yml)\\\"\" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'"
+    
     cat >> "$COMPOSE_FILE" << EOF
 
   ${db_name}-kong:
@@ -136,7 +139,7 @@ EOF
       SUPABASE_SERVICE_KEY: ${service_key}
       DASHBOARD_USERNAME: ${DASHBOARD_USERNAME:-supabase}
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-supabase}
-    entrypoint: bash -c 'eval "echo \"$$(cat ~/temp.yml)\"" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'
+    entrypoint: ${kong_entrypoint_cmd}
     depends_on:
       ${db_name}-db:
         condition: service_healthy
@@ -150,7 +153,8 @@ EOF
       GOTRUE_API_PORT: 9999
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${postgres_pass}@${db_name}-db:5432/postgres
-      GOTRUE_SITE_URL: http://localhost:3000
+      GOTRUE_SITE_URL: http://localhost:${studio_port}
+      API_EXTERNAL_URL: http://localhost:${kong_http_port}
       GOTRUE_JWT_SECRET: ${jwt_secret}
       GOTRUE_JWT_EXP: 3600
     depends_on:
@@ -303,7 +307,7 @@ EOF
       DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime'
       DB_ENC_KEY: supabaserealtime
       API_JWT_SECRET: ${jwt_secret}
-      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq}
       ERL_AFLAGS: -proto_dist inet_tcp
       DNS_NODES: "''"
       RLIMIT_NOFILE: "10000"
@@ -418,7 +422,7 @@ EOF
       interval: 5s
       retries: 3
     environment:
-      LOGFLARE_PUBLIC_ACCESS_TOKEN: ${LOGFLARE_PUBLIC_ACCESS_TOKEN}
+      LOGFLARE_PUBLIC_ACCESS_TOKEN: ${LOGFLARE_PUBLIC_ACCESS_TOKEN:-your-super-secret-and-long-logflare-key-public}
     command:
       [
         "--config",
@@ -461,22 +465,22 @@ EOF
       POSTGRES_PASSWORD: ${postgres_pass}
       DATABASE_URL: ecto://supabase_admin:${postgres_pass}@${db_name}-db:${postgres_port}/_supabase
       CLUSTER_POSTGRES: true
-      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
-      VAULT_ENC_KEY: ${VAULT_ENC_KEY}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq}
+      VAULT_ENC_KEY: ${VAULT_ENC_KEY:-your-encryption-key-32-chars-min}
       API_JWT_SECRET: ${jwt_secret}
       METRICS_JWT_SECRET: ${jwt_secret}
       REGION: local
       ERL_AFLAGS: -proto_dist inet_tcp
       POOLER_TENANT_ID: ${db_name}-tenant
-      POOLER_DEFAULT_POOL_SIZE: ${POOLER_DEFAULT_POOL_SIZE}
-      POOLER_MAX_CLIENT_CONN: ${POOLER_MAX_CLIENT_CONN}
+      POOLER_DEFAULT_POOL_SIZE: ${POOLER_DEFAULT_POOL_SIZE:-20}
+      POOLER_MAX_CLIENT_CONN: ${POOLER_MAX_CLIENT_CONN:-100}
       POOLER_POOL_MODE: transaction
-      DB_POOL_SIZE: ${POOLER_DB_POOL_SIZE}
+      DB_POOL_SIZE: ${POOLER_DB_POOL_SIZE:-5}
     command:
       [
         "/bin/sh",
         "-c",
-        "/app/bin/migrate && /app/bin/supavisor eval \"$$(cat /etc/pooler/pooler.exs)\" && /app/bin/server"
+        "/app/bin/migrate && /app/bin/supavisor eval \"\$(cat /etc/pooler/pooler.exs)\" && /app/bin/server"
       ]
 
 EOF

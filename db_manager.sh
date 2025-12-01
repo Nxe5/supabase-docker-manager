@@ -82,6 +82,11 @@ cmd_add() {
     
     local entry="${db_name}|${postgres_port}|${kong_http_port}|${kong_https_port}|${pooler_port}|${cpu_limit}|${memory_limit}|${postgres_pass}|${jwt_secret}|${anon_key}|${service_key}"
     
+    # Calculate studio port BEFORE adding entry (3000 + number of existing databases)
+    local db_count=$(grep -c "^[a-zA-Z0-9-]\+|" "$CENTRAL_ENV" 2>/dev/null | head -1 || echo "0")
+    db_count=${db_count:-0}
+    local studio_port=$((3000 + db_count))
+    
     # Add entry to databases.env
     print_info "Adding entry to databases.env..."
     sed -i.bak "/^DASHBOARD_USERNAME/i\\
@@ -190,7 +195,7 @@ ENABLE_ANONYMOUS_USERS=false
 ENABLE_PHONE_SIGNUP=true
 ENABLE_PHONE_AUTOCONFIRM=true
 
-STUDIO_DEFAULT_ORGANIZATION=Default Organization
+STUDIO_DEFAULT_ORGANIZATION="Default Organization"
 STUDIO_DEFAULT_PROJECT=${db_name}
 SUPABASE_PUBLIC_URL=http://localhost:${kong_http_port}
 
@@ -212,6 +217,31 @@ DASHBOARD_PASSWORD=this_password_is_insecure_and_should_be_updated
 SECRET_KEY_BASE=UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq
 VAULT_ENC_KEY=your-encryption-key-32-chars-min
 PG_META_CRYPTO_KEY=your-encryption-key-32-chars-min
+
+############
+# External Connection URLs
+# Use these URLs to connect from external applications
+############
+
+# PostgreSQL direct connection
+DATABASE_URL=postgresql://postgres:${postgres_pass}@localhost:${postgres_port}/postgres
+POSTGRES_URL=postgresql://postgres:${postgres_pass}@localhost:${postgres_port}/postgres
+
+# Connection pooler (recommended for production)
+POOLER_URL=postgresql://postgres:${postgres_pass}@localhost:${pooler_port}/postgres
+DATABASE_POOLER_URL=postgresql://postgres:${postgres_pass}@localhost:${pooler_port}/postgres
+
+# Supabase API endpoints
+SUPABASE_URL=http://localhost:${kong_http_port}
+API_URL=http://localhost:${kong_http_port}
+REST_API_URL=http://localhost:${kong_http_port}/rest/v1/
+AUTH_API_URL=http://localhost:${kong_http_port}/auth/v1/
+STORAGE_API_URL=http://localhost:${kong_http_port}/storage/v1/
+REALTIME_URL=ws://localhost:${kong_http_port}/realtime/v1/
+FUNCTIONS_URL=http://localhost:${kong_http_port}/functions/v1/
+
+# Studio web dashboard
+STUDIO_URL=http://localhost:${studio_port}
 EOF
         
         print_success "Database directory and .env file created"
@@ -249,6 +279,11 @@ cmd_add_full() {
     local service_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q"
     
     local entry="${db_name}|${postgres_port}|${kong_http_port}|${kong_https_port}|${pooler_port}|${cpu_limit}|${memory_limit}|${postgres_pass}|${jwt_secret}|${anon_key}|${service_key}"
+    
+    # Calculate studio port BEFORE adding entry (3000 + number of existing databases)
+    local db_count=$(grep -c "^[a-zA-Z0-9-]\+|" "$CENTRAL_ENV" 2>/dev/null | head -1 || echo "0")
+    db_count=${db_count:-0}
+    local studio_port=$((3000 + db_count))
     
     # Add entry to databases.env
     print_info "Adding entry to databases.env..."
@@ -358,7 +393,7 @@ ENABLE_ANONYMOUS_USERS=false
 ENABLE_PHONE_SIGNUP=true
 ENABLE_PHONE_AUTOCONFIRM=true
 
-STUDIO_DEFAULT_ORGANIZATION=Default Organization
+STUDIO_DEFAULT_ORGANIZATION="Default Organization"
 STUDIO_DEFAULT_PROJECT=${db_name}
 SUPABASE_PUBLIC_URL=http://localhost:${kong_http_port}
 
@@ -380,6 +415,31 @@ DASHBOARD_PASSWORD=this_password_is_insecure_and_should_be_updated
 SECRET_KEY_BASE=UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq
 VAULT_ENC_KEY=your-encryption-key-32-chars-min
 PG_META_CRYPTO_KEY=your-encryption-key-32-chars-min
+
+############
+# External Connection URLs
+# Use these URLs to connect from external applications
+############
+
+# PostgreSQL direct connection
+DATABASE_URL=postgresql://postgres:${postgres_pass}@localhost:${postgres_port}/postgres
+POSTGRES_URL=postgresql://postgres:${postgres_pass}@localhost:${postgres_port}/postgres
+
+# Connection pooler (recommended for production)
+POOLER_URL=postgresql://postgres:${postgres_pass}@localhost:${pooler_port}/postgres
+DATABASE_POOLER_URL=postgresql://postgres:${postgres_pass}@localhost:${pooler_port}/postgres
+
+# Supabase API endpoints
+SUPABASE_URL=http://localhost:${kong_http_port}
+API_URL=http://localhost:${kong_http_port}
+REST_API_URL=http://localhost:${kong_http_port}/rest/v1/
+AUTH_API_URL=http://localhost:${kong_http_port}/auth/v1/
+STORAGE_API_URL=http://localhost:${kong_http_port}/storage/v1/
+REALTIME_URL=ws://localhost:${kong_http_port}/realtime/v1/
+FUNCTIONS_URL=http://localhost:${kong_http_port}/functions/v1/
+
+# Studio web dashboard
+STUDIO_URL=http://localhost:${studio_port}
 EOF
         
         print_success "Database directory and .env file created"
@@ -416,27 +476,29 @@ cmd_remove() {
     sed -i.bak "/^${db_name}|/d" "$CENTRAL_ENV" && rm -f "${CENTRAL_ENV}.bak"
     print_success "Entry removed from databases.env"
     
-    # Check if directory exists and ask about removal
+    # Remove database directory automatically
     local db_dir="${SCRIPT_DIR}/databases/${db_name}"
     if [ -d "$db_dir" ]; then
-        read -p "Remove database directory '$db_dir' and all its files? (y/N) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            print_info "Removing directory: $db_dir"
-            rm -rf "$db_dir"
-            print_success "Directory removed"
-        else
-            print_info "Directory kept: $db_dir"
-        fi
+        print_info "Removing directory: $db_dir"
+        rm -rf "$db_dir"
+        print_success "Directory removed"
     fi
+    
+    # Stop and remove containers
+    print_info "Stopping containers..."
+    docker compose stop ${db_name}-db ${db_name}-kong ${db_name}-auth ${db_name}-rest ${db_name}-studio ${db_name}-meta ${db_name}-analytics ${db_name}-realtime ${db_name}-storage ${db_name}-imgproxy ${db_name}-functions ${db_name}-vector ${db_name}-supavisor 2>/dev/null || true
+    docker compose rm -f ${db_name}-db ${db_name}-kong ${db_name}-auth ${db_name}-rest ${db_name}-studio ${db_name}-meta ${db_name}-analytics ${db_name}-realtime ${db_name}-storage ${db_name}-imgproxy ${db_name}-functions ${db_name}-vector ${db_name}-supavisor 2>/dev/null || true
+    
+    # Remove volumes to ensure clean state on recreation
+    print_info "Removing volumes..."
+    docker volume rm supabase-swarm_${db_name}-db-data supabase-swarm_${db_name}-db-config supabase-swarm_${db_name}-storage-data 2>/dev/null || true
+    docker volume rm ${db_name}-db-data ${db_name}-db-config ${db_name}-storage-data 2>/dev/null || true
+    print_success "Volumes removed"
     
     # Regenerate docker-compose.yml (lean mode)
     generate_compose "lean"
     
-    print_success "Database '$db_name' removed successfully"
-    print_info "Note: Docker containers and volumes are not automatically removed"
-    print_info "To remove containers: docker compose stop ${db_name}-db ${db_name}-kong"
-    print_info "To remove volumes: docker volume rm ${db_name}-db-data ${db_name}-db-config"
+    print_success "Database '$db_name' removed successfully (including containers and volumes)"
 }
 
 # Remove all databases
@@ -607,31 +669,28 @@ check_and_regenerate() {
     if "${SCRIPT_DIR}/helpers/detect_changes.sh" 2>/dev/null; then
         print_info "Changes detected in databases.env, regenerating docker-compose.yml..."
         
-        # Determine mode for this database
+        # Determine mode for this database - check if it was added as full
         local full_mode="lean"
         if grep -q "^${db_name}|" "$CENTRAL_ENV"; then
-            # Old format - check docker-compose.yml for full services
-            if docker compose config --services 2>/dev/null | grep -q "^${db_name}-realtime$"; then
+            # Check if database directory has full services indicator or check compose file quickly
+            local db_dir="${SCRIPT_DIR}/databases/${db_name}"
+            if [ -f "${db_dir}/.env" ] && grep -q "FULL mode" "${db_dir}/.env" 2>/dev/null; then
                 full_mode="full"
-            fi
-        else
-            # New format - check FULL_SERVICES flag
-            if grep -A 20 "^\[${db_name}\]" "$CENTRAL_ENV" | grep -q "^FULL_SERVICES=true"; then
+            elif docker compose config --services 2>/dev/null | head -20 | grep -q "^${db_name}-realtime$" 2>/dev/null; then
                 full_mode="full"
             fi
         fi
         
         # Regenerate for all databases (use the highest mode needed)
         local needs_full=false
-        while IFS='|' read -r name rest; do
-            [[ "$name" =~ ^#.*$ ]] && continue
-            [[ -z "$name" ]] && continue
-            [[ "$name" =~ = ]] && break
-            if docker compose config --services 2>/dev/null | grep -q "^${name}-realtime$" 2>/dev/null; then
+        # Quick check: if any database has full services, use full mode
+        for db_dir in "${SCRIPT_DIR}/databases"/*/; do
+            [ ! -d "$db_dir" ] && continue
+            if [ -f "${db_dir}/.env" ] && grep -q "FULL mode" "${db_dir}/.env" 2>/dev/null; then
                 needs_full=true
                 break
             fi
-        done < "$CENTRAL_ENV" 2>/dev/null || true
+        done 2>/dev/null || true
         
         generate_compose "$([ "$needs_full" = true ] && echo "full" || echo "lean")"
     fi
