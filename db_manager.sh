@@ -53,10 +53,18 @@ find_next_ports() {
 }
 
 # Generate docker-compose.yml from databases.env
+# Usage: generate_compose [mode] [db_name]
+# If db_name is provided, only generates for that database
 generate_compose() {
     local mode="${1:-lean}"
-    print_info "Generating docker-compose.yml from databases.env (mode: $mode)..."
-    "${SCRIPT_DIR}/helpers/generate_compose.sh" "$mode" && print_success "docker-compose.yml generated"
+    local db_name="${2:-}"
+    if [ -n "$db_name" ]; then
+        print_info "Generating docker-compose.yml for $db_name (mode: $mode)..."
+        "${SCRIPT_DIR}/helpers/generate_compose.sh" "$mode" "$db_name" && print_success "docker-compose.yml generated for $db_name"
+    else
+        print_info "Generating docker-compose.yml files for all databases (mode: $mode)..."
+        "${SCRIPT_DIR}/helpers/generate_compose.sh" "$mode" && print_success "docker-compose.yml files generated"
+    fi
 }
 
 # Add database (lean - essential services only)
@@ -247,8 +255,8 @@ EOF
         print_success "Database directory and .env file created"
     fi
     
-    # Regenerate docker-compose.yml (lean mode)
-    generate_compose "lean"
+    # Generate docker-compose.yml for this database (lean mode)
+    generate_compose "lean" "$db_name"
     
     print_success "Database '$db_name' added successfully!"
     print_info "Directory: $db_dir"
@@ -445,8 +453,8 @@ EOF
         print_success "Database directory and .env file created"
     fi
     
-    # Regenerate docker-compose.yml (full mode)
-    generate_compose "full"
+    # Generate docker-compose.yml for this database (full mode)
+    generate_compose "full" "$db_name"
     
     print_success "Database '$db_name' added successfully (FULL mode - all services)!"
     print_info "Directory: $db_dir"
@@ -484,19 +492,24 @@ cmd_remove() {
         print_success "Directory removed"
     fi
     
-    # Stop and remove containers
-    print_info "Stopping containers..."
-    docker compose stop ${db_name}-db ${db_name}-kong ${db_name}-auth ${db_name}-rest ${db_name}-studio ${db_name}-meta ${db_name}-analytics ${db_name}-realtime ${db_name}-storage ${db_name}-imgproxy ${db_name}-functions ${db_name}-vector ${db_name}-supavisor 2>/dev/null || true
-    docker compose rm -f ${db_name}-db ${db_name}-kong ${db_name}-auth ${db_name}-rest ${db_name}-studio ${db_name}-meta ${db_name}-analytics ${db_name}-realtime ${db_name}-storage ${db_name}-imgproxy ${db_name}-functions ${db_name}-vector ${db_name}-supavisor 2>/dev/null || true
-    
-    # Remove volumes to ensure clean state on recreation
-    print_info "Removing volumes..."
-    docker volume rm supabase-swarm_${db_name}-db-data supabase-swarm_${db_name}-db-config supabase-swarm_${db_name}-storage-data 2>/dev/null || true
-    docker volume rm ${db_name}-db-data ${db_name}-db-config ${db_name}-storage-data 2>/dev/null || true
-    print_success "Volumes removed"
-    
-    # Regenerate docker-compose.yml (lean mode)
-    generate_compose "lean"
+    # Stop and remove containers using database-specific compose file
+    local compose_file="${SCRIPT_DIR}/databases/${db_name}/docker-compose.yml"
+    if [ -f "$compose_file" ]; then
+        print_info "Stopping containers..."
+        docker compose -f "$compose_file" down -v 2>/dev/null || true
+        print_success "Containers and volumes removed"
+    else
+        # Fallback: try to stop/remove by name
+        print_info "Stopping containers (fallback method)..."
+        docker compose stop ${db_name}-db ${db_name}-kong ${db_name}-auth ${db_name}-rest ${db_name}-studio ${db_name}-meta ${db_name}-analytics ${db_name}-realtime ${db_name}-storage ${db_name}-imgproxy ${db_name}-functions ${db_name}-vector ${db_name}-supavisor 2>/dev/null || true
+        docker compose rm -f ${db_name}-db ${db_name}-kong ${db_name}-auth ${db_name}-rest ${db_name}-studio ${db_name}-meta ${db_name}-analytics ${db_name}-realtime ${db_name}-storage ${db_name}-imgproxy ${db_name}-functions ${db_name}-vector ${db_name}-supavisor 2>/dev/null || true
+        
+        # Remove volumes to ensure clean state on recreation
+        print_info "Removing volumes..."
+        docker volume rm ${db_name}_${db_name}-db-data ${db_name}_${db_name}-db-config ${db_name}_${db_name}-storage-data 2>/dev/null || true
+        docker volume rm ${db_name}-db-data ${db_name}-db-config ${db_name}-storage-data 2>/dev/null || true
+        print_success "Volumes removed"
+    fi
     
     print_success "Database '$db_name' removed successfully (including containers and volumes)"
 }
@@ -556,8 +569,8 @@ cmd_remove_all() {
         fi
     done <<< "$databases"
     
-    # Regenerate docker-compose.yml (lean mode)
-    generate_compose "lean"
+    # Note: Per-database compose files are automatically removed with their directories
+    # No need to regenerate - remaining databases already have their compose files
     
     print_success "Removed $removed database(s) from databases.env"
     [ "$remove_dirs" = true ] && print_success "Removed $dirs_removed directory(ies)"
@@ -617,7 +630,8 @@ cmd_update_resources() {
     sed -n '/^DASHBOARD_USERNAME/,$p' "$CENTRAL_ENV" >> "$temp_file"
     mv "$temp_file" "$CENTRAL_ENV"
     
-    generate_compose
+    # Regenerate compose files for all databases
+    generate_compose "full"
     print_success "Resources updated"
 }
 
@@ -651,8 +665,16 @@ cmd_validate() {
 # Note: This matches the services generated by generate_compose.sh
 get_db_services() {
     local db_name="$1"
-    # Check if full services exist in docker-compose.yml
-    if docker compose config --services 2>/dev/null | grep -q "^${db_name}-realtime$"; then
+    local compose_file="${SCRIPT_DIR}/databases/${db_name}/docker-compose.yml"
+    
+    if [ ! -f "$compose_file" ]; then
+        # Fallback: return all possible services
+        echo "${db_name}-db ${db_name}-kong ${db_name}-auth ${db_name}-rest ${db_name}-studio ${db_name}-meta ${db_name}-analytics ${db_name}-realtime ${db_name}-storage ${db_name}-imgproxy ${db_name}-functions ${db_name}-vector ${db_name}-supavisor"
+        return
+    fi
+    
+    # Check if full services exist in database-specific docker-compose.yml
+    if docker compose -f "$compose_file" config --services 2>/dev/null | grep -q "^${db_name}-realtime$"; then
         # Full mode - all services
         echo "${db_name}-db ${db_name}-kong ${db_name}-auth ${db_name}-rest ${db_name}-studio ${db_name}-meta ${db_name}-analytics ${db_name}-realtime ${db_name}-storage ${db_name}-imgproxy ${db_name}-functions ${db_name}-vector ${db_name}-supavisor"
     else
@@ -667,32 +689,27 @@ check_and_regenerate() {
     
     # Check if databases.env changed
     if "${SCRIPT_DIR}/helpers/detect_changes.sh" 2>/dev/null; then
-        print_info "Changes detected in databases.env, regenerating docker-compose.yml..."
-        
-        # Determine mode for this database - check if it was added as full
-        local full_mode="lean"
-        if grep -q "^${db_name}|" "$CENTRAL_ENV"; then
-            # Check if database directory has full services indicator or check compose file quickly
+        if [ -n "$db_name" ]; then
+            print_info "Changes detected in databases.env, regenerating docker-compose.yml for $db_name..."
             local db_dir="${SCRIPT_DIR}/databases/${db_name}"
+            local full_mode="lean"
             if [ -f "${db_dir}/.env" ] && grep -q "FULL mode" "${db_dir}/.env" 2>/dev/null; then
                 full_mode="full"
-            elif docker compose config --services 2>/dev/null | head -20 | grep -q "^${db_name}-realtime$" 2>/dev/null; then
-                full_mode="full"
             fi
+            generate_compose "$full_mode" "$db_name"
+        else
+            print_info "Changes detected in databases.env, regenerating all docker-compose.yml files..."
+            # Regenerate for all databases
+            local needs_full=false
+            for db_dir in "${SCRIPT_DIR}/databases"/*/; do
+                [ ! -d "$db_dir" ] && continue
+                if [ -f "${db_dir}/.env" ] && grep -q "FULL mode" "${db_dir}/.env" 2>/dev/null; then
+                    needs_full=true
+                    break
+                fi
+            done 2>/dev/null || true
+            generate_compose "$([ "$needs_full" = true ] && echo "full" || echo "lean")"
         fi
-        
-        # Regenerate for all databases (use the highest mode needed)
-        local needs_full=false
-        # Quick check: if any database has full services, use full mode
-        for db_dir in "${SCRIPT_DIR}/databases"/*/; do
-            [ ! -d "$db_dir" ] && continue
-            if [ -f "${db_dir}/.env" ] && grep -q "FULL mode" "${db_dir}/.env" 2>/dev/null; then
-                needs_full=true
-                break
-            fi
-        done 2>/dev/null || true
-        
-        generate_compose "$([ "$needs_full" = true ] && echo "full" || echo "lean")"
     fi
 }
 
@@ -723,9 +740,14 @@ cmd_start() {
         fi
         
         print_info "Starting: $db_name"
+        local compose_file="${SCRIPT_DIR}/databases/${db_name}/docker-compose.yml"
+        if [ ! -f "$compose_file" ]; then
+            print_error "docker-compose.yml not found for $db_name. Regenerating..."
+            check_and_regenerate "$db_name"
+        fi
         local services=$(get_db_services "$db_name")
         
-        if docker compose up -d $services 2>&1 | grep -q "error\|Error\|ERROR"; then
+        if docker compose -f "$compose_file" up -d $services 2>&1 | grep -q "error\|Error\|ERROR"; then
             print_error "Failed to start $db_name"
             ((failed++))
         else
@@ -772,9 +794,14 @@ cmd_start_all() {
         [ -z "$db_name" ] && continue
         
         print_info "Starting: $db_name"
+        local compose_file="${SCRIPT_DIR}/databases/${db_name}/docker-compose.yml"
+        if [ ! -f "$compose_file" ]; then
+            print_error "docker-compose.yml not found for $db_name. Regenerating..."
+            check_and_regenerate "$db_name"
+        fi
         local services=$(get_db_services "$db_name")
         
-        if docker compose up -d $services 2>&1 | grep -q "error\|Error\|ERROR"; then
+        if docker compose -f "$compose_file" up -d $services 2>&1 | grep -q "error\|Error\|ERROR"; then
             print_error "Failed to start $db_name"
             ((failed++))
         else
@@ -812,9 +839,15 @@ cmd_stop() {
         }
         
         print_info "Stopping: $db_name"
+        local compose_file="${SCRIPT_DIR}/databases/${db_name}/docker-compose.yml"
+        if [ ! -f "$compose_file" ]; then
+            print_error "docker-compose.yml not found for $db_name"
+            ((failed++))
+            continue
+        fi
         local services=$(get_db_services "$db_name")
         
-        if docker compose stop $services 2>&1 | grep -q "error\|Error\|ERROR"; then
+        if docker compose -f "$compose_file" stop $services 2>&1 | grep -q "error\|Error\|ERROR"; then
             print_error "Failed to stop $db_name"
             ((failed++))
         else
@@ -852,9 +885,15 @@ cmd_stop_all() {
         [ -z "$db_name" ] && continue
         
         print_info "Stopping: $db_name"
+        local compose_file="${SCRIPT_DIR}/databases/${db_name}/docker-compose.yml"
+        if [ ! -f "$compose_file" ]; then
+            print_error "docker-compose.yml not found for $db_name"
+            ((failed++))
+            continue
+        fi
         local services=$(get_db_services "$db_name")
         
-        if docker compose stop $services 2>&1 | grep -q "error\|Error\|ERROR"; then
+        if docker compose -f "$compose_file" stop $services 2>&1 | grep -q "error\|Error\|ERROR"; then
             print_error "Failed to stop $db_name"
             ((failed++))
         else
@@ -906,7 +945,7 @@ case "${1:-}" in
         cmd_validate
         ;;
     generate)
-        generate_compose "${2:-lean}"
+        generate_compose "${2:-lean}" "${3:-}"
         ;;
     *)
         echo "Usage: $0 {add|add-full|remove|remove-all|start|start-all|stop|stop-all|show-ports|update-resources|validate|generate} [options]"

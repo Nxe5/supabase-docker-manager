@@ -1,13 +1,12 @@
 #!/bin/bash
 
-# Helper script to generate docker-compose.yml from databases.env
+# Helper script to generate per-database docker-compose.yml files
 # This is called by db_manager.sh
 
 # Get the project root (parent of helpers directory)
 HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_DIR="$(cd "${HELPER_DIR}/.." && pwd)"
 CENTRAL_ENV="${SCRIPT_DIR}/databases.env"
-COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
 # Use supabase/docker as template if supabase-project doesn't exist
 if [ -d "${SCRIPT_DIR}/supabase-project" ]; then
     TEMPLATE_DIR="${SCRIPT_DIR}/supabase-project"
@@ -26,43 +25,45 @@ fi
 # Read global config
 source <(grep -E "^[A-Z_]+=" "$CENTRAL_ENV" | grep -v "^#")
 
-cat > "$COMPOSE_FILE" << 'EOF'
-# Auto-generated docker-compose.yml
-# DO NOT EDIT MANUALLY - Use ./db_manager.sh to manage databases
-# Generated from databases.env
-
-name: supabase-swarm
-
-services:
-EOF
-
 # Check if full services mode (default: lean)
 FULL_SERVICES="${1:-lean}"
 
-# Generate services for each database
-# Calculate studio port starting from 3000
-studio_port_base=3000
-db_index=0
+# Optional: generate for specific database only
+TARGET_DB="${2:-}"
 
-while IFS='|' read -r db_name postgres_port kong_http_port kong_https_port pooler_port cpu_limit memory_limit postgres_pass jwt_secret anon_key service_key rest; do
-    [[ "$db_name" =~ ^#.*$ ]] && continue
-    [[ -z "$db_name" ]] && continue
-    # Stop at global config section (lines with = are config variables, not database entries)
-    [[ "$db_name" =~ = ]] && break
-    [[ "$db_name" == "DASHBOARD_USERNAME" ]] && break
+# Function to generate compose file for a single database
+generate_db_compose() {
+    local db_name="$1"
+    local postgres_port="$2"
+    local kong_http_port="$3"
+    local kong_https_port="$4"
+    local pooler_port="$5"
+    local cpu_limit="$6"
+    local memory_limit="$7"
+    local postgres_pass="$8"
+    local jwt_secret="$9"
+    local anon_key="${10}"
+    local service_key="${11}"
+    local studio_port="${12}"
+    local db_mode="${13:-full}"
     
-    studio_port=$((studio_port_base + db_index))
-    ((db_index++))
+    local db_dir="${SCRIPT_DIR}/databases/${db_name}"
+    local compose_file="${db_dir}/docker-compose.yml"
+    
+    # Ensure directory exists
+    mkdir -p "$db_dir"
     
     # Use template directory volumes if it exists
-    volumes_path="${TEMPLATE_DIR}/volumes"
+    local volumes_path="${TEMPLATE_DIR}/volumes"
     
-    cat >> "$COMPOSE_FILE" << EOF
+    cat > "$compose_file" << EOF
+# Auto-generated docker-compose.yml for ${db_name}
+# DO NOT EDIT MANUALLY - Use ./db_manager.sh to manage databases
+# Generated from databases.env
 
-  # ============================================
-  # Database: $db_name
-  # ============================================
-  
+name: ${db_name}
+
+services:
   ${db_name}-db:
     container_name: ${db_name}-db
     image: supabase/postgres:15.8.1.085
@@ -108,8 +109,8 @@ while IFS='|' read -r db_name postgres_port kong_http_port kong_https_port poole
 EOF
 
     # Add vector dependency only in full mode (use service_started instead of healthy since vector healthcheck can be flaky)
-    if [ "$FULL_SERVICES" = "full" ]; then
-        cat >> "$COMPOSE_FILE" << EOF
+    if [ "$db_mode" = "full" ]; then
+        cat >> "$compose_file" << EOF
     depends_on:
       ${db_name}-vector:
         condition: service_started
@@ -117,9 +118,9 @@ EOF
     fi
 
     # Kong entrypoint command with proper escaping
-    kong_entrypoint_cmd="bash -c 'eval \"echo \\\"\$(cat ~/temp.yml)\\\"\" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'"
+    local kong_entrypoint_cmd="bash -c 'eval \"echo \\\"\$(cat ~/temp.yml)\\\"\" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'"
     
-    cat >> "$COMPOSE_FILE" << EOF
+    cat >> "$compose_file" << EOF
 
   ${db_name}-kong:
     container_name: ${db_name}-kong
@@ -268,9 +269,9 @@ EOF
 
 EOF
 
-    # Add full services only if FULL_SERVICES=full
-    if [ "$FULL_SERVICES" = "full" ]; then
-        cat >> "$COMPOSE_FILE" << EOF
+    # Add full services only if db_mode=full
+    if [ "$db_mode" = "full" ]; then
+        cat >> "$compose_file" << EOF
 
   ${db_name}-realtime:
     container_name: ${db_name}-realtime
@@ -485,24 +486,48 @@ EOF
 
 EOF
     fi
-done < "$CENTRAL_ENV"
 
-cat >> "$COMPOSE_FILE" << 'EOF'
+    cat >> "$compose_file" << EOF
 
 volumes:
+  ${db_name}-db-data:
+  ${db_name}-db-config:
+  ${db_name}-storage-data:
+
 EOF
 
-# Add volumes for each database
-while IFS='|' read -r db_name rest; do
+    echo "Generated docker-compose.yml for ${db_name}"
+}
+
+# Generate compose files for all databases or specific database
+studio_port_base=3000
+db_index=0
+
+while IFS='|' read -r db_name postgres_port kong_http_port kong_https_port pooler_port cpu_limit memory_limit postgres_pass jwt_secret anon_key service_key rest; do
     [[ "$db_name" =~ ^#.*$ ]] && continue
     [[ -z "$db_name" ]] && continue
     # Stop at global config section (lines with = are config variables, not database entries)
     [[ "$db_name" =~ = ]] && break
     [[ "$db_name" == "DASHBOARD_USERNAME" ]] && break
-    echo "  ${db_name}-db-data:" >> "$COMPOSE_FILE"
-    echo "  ${db_name}-db-config:" >> "$COMPOSE_FILE"
-    echo "  ${db_name}-storage-data:" >> "$COMPOSE_FILE"
+    
+    # If TARGET_DB is set, only generate for that database
+    if [ -n "$TARGET_DB" ] && [ "$db_name" != "$TARGET_DB" ]; then
+        ((db_index++))
+        continue
+    fi
+    
+    studio_port=$((studio_port_base + db_index))
+    
+    # Determine if this database needs full services
+    db_dir="${SCRIPT_DIR}/databases/${db_name}"
+    db_mode="$FULL_SERVICES"
+    if [ -f "${db_dir}/.env" ] && grep -q "FULL mode" "${db_dir}/.env" 2>/dev/null; then
+        db_mode="full"
+    fi
+    
+    generate_db_compose "$db_name" "$postgres_port" "$kong_http_port" "$kong_https_port" "$pooler_port" "$cpu_limit" "$memory_limit" "$postgres_pass" "$jwt_secret" "$anon_key" "$service_key" "$studio_port" "$db_mode"
+    
+    ((db_index++))
 done < "$CENTRAL_ENV"
 
-echo "docker-compose.yml generated successfully"
-
+echo "docker-compose.yml files generated successfully"
