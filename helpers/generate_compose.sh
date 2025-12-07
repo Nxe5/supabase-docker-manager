@@ -228,7 +228,7 @@ EOF
     environment:
       PG_META_PORT: 8080
       PG_META_DB_HOST: ${db_name}-db
-      PG_META_DB_PORT: ${postgres_port}
+      PG_META_DB_PORT: 5432
       PG_META_DB_NAME: postgres
       PG_META_DB_USER: supabase_admin
       PG_META_DB_PASSWORD: ${postgres_pass}
@@ -256,14 +256,14 @@ EOF
       DB_USERNAME: supabase_admin
       DB_DATABASE: _supabase
       DB_HOSTNAME: ${db_name}-db
-      DB_PORT: ${postgres_port}
+      DB_PORT: 5432
       DB_PASSWORD: ${postgres_pass}
       DB_SCHEMA: _analytics
       LOGFLARE_PUBLIC_ACCESS_TOKEN: ${LOGFLARE_PUBLIC_ACCESS_TOKEN}
       LOGFLARE_PRIVATE_ACCESS_TOKEN: ${LOGFLARE_PRIVATE_ACCESS_TOKEN}
       LOGFLARE_SINGLE_TENANT: true
       LOGFLARE_SUPABASE_MODE: true
-      POSTGRES_BACKEND_URL: postgresql://supabase_admin:${postgres_pass}@${db_name}-db:${postgres_port}/_supabase
+      POSTGRES_BACKEND_URL: postgresql://supabase_admin:${postgres_pass}@${db_name}-db:5432/_supabase
       POSTGRES_BACKEND_SCHEMA: _analytics
       LOGFLARE_FEATURE_FLAG_OVERRIDE: multibackend=true
 
@@ -301,7 +301,7 @@ EOF
     environment:
       PORT: 4000
       DB_HOST: ${db_name}-db
-      DB_PORT: ${postgres_port}
+      DB_PORT: 5432
       DB_USER: supabase_admin
       DB_PASSWORD: ${postgres_pass}
       DB_NAME: postgres
@@ -347,7 +347,7 @@ EOF
       SERVICE_KEY: ${service_key}
       POSTGREST_URL: http://${db_name}-rest:3000
       PGRST_JWT_SECRET: ${jwt_secret}
-      DATABASE_URL: postgres://supabase_storage_admin:${postgres_pass}@${db_name}-db:${postgres_port}/postgres
+      DATABASE_URL: postgres://supabase_storage_admin:${postgres_pass}@${db_name}-db:5432/postgres
       FILE_SIZE_LIMIT: 52428800
       STORAGE_BACKEND: file
       FILE_STORAGE_BACKEND_PATH: /var/lib/storage
@@ -393,7 +393,7 @@ EOF
       SUPABASE_URL: http://${db_name}-kong:8000
       SUPABASE_ANON_KEY: ${anon_key}
       SUPABASE_SERVICE_ROLE_KEY: ${service_key}
-      SUPABASE_DB_URL: postgresql://postgres:${postgres_pass}@${db_name}-db:${postgres_port}/postgres
+      SUPABASE_DB_URL: postgresql://postgres:${postgres_pass}@${db_name}-db:5432/postgres
       VERIFY_JWT: "${FUNCTIONS_VERIFY_JWT}"
     command:
       [
@@ -461,10 +461,10 @@ EOF
         condition: service_healthy
     environment:
       PORT: 4000
-      POSTGRES_PORT: ${postgres_port}
+      POSTGRES_PORT: 5432
       POSTGRES_DB: postgres
       POSTGRES_PASSWORD: ${postgres_pass}
-      DATABASE_URL: ecto://supabase_admin:${postgres_pass}@${db_name}-db:${postgres_port}/_supabase
+      DATABASE_URL: ecto://supabase_admin:${postgres_pass}@${db_name}-db:5432/_supabase
       CLUSTER_POSTGRES: true
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq}
       VAULT_ENC_KEY: ${VAULT_ENC_KEY:-your-encryption-key-32-chars-min}
